@@ -1,0 +1,19 @@
+[Unit]
+Description=Trading desk — unified tabbed front end and reverse-proxy gateway
+After=network.target
+
+[Service]
+Environment=JAVA_HOME=/opt/jdk25
+Environment=JAVA_OPTS=-Xmx96m
+Environment=PORT=8084
+# Upstream base URLs (ORDERBOOK_UPSTREAM/RISK_UPSTREAM/TRADING_UPSTREAM); optional — absent
+# means the box-local defaults (localhost:8080/8081/8082).
+EnvironmentFile=-/etc/trading-desk/upstreams.env
+ExecStart=/home/ubuntu/trading-desk/bin/trading-desk
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+User=ubuntu
+
+[Install]
+WantedBy=multi-user.target

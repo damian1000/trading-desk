@@ -1,0 +1,9 @@
+# Trading desk — box 1 (145.241.193.169). Add this block to /etc/caddy/Caddyfile alongside the
+# orderbook / risk / admin blocks. The desk serves the shell and reverse-proxies the three
+# services itself, so Caddy only fronts one upstream here. flush_interval -1 keeps the proxied
+# SSE streams unbuffered end to end.
+desk.damianhoward.com {
+	reverse_proxy localhost:8084 {
+		flush_interval -1
+	}
+}

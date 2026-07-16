@@ -1,0 +1,120 @@
+// The unified trading desk: a composing gateway that serves one tabbed front end and
+// reverse-proxies the order book, risk, and trading services under a single origin. It owns
+// no domain logic — each service stays a standalone, independently deployed app; this module
+// only routes to them (streaming SSE through untouched) and serves the shell chrome.
+plugins {
+    id 'org.jetbrains.kotlin.jvm' version '2.3.21' // pinned: CodeQL's Kotlin extractor caps at <2.3.30
+    id 'application'
+    id 'jacoco'
+    id 'com.diffplug.spotless' version '8.8.0'
+    id 'org.owasp.dependencycheck' version '12.2.2'
+}
+
+group = 'io.github.damian1000'
+version = '1.0.0'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+kotlin {
+    jvmToolchain(25)
+    compilerOptions {
+        jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_25)
+    }
+}
+
+application {
+    applicationName = 'trading-desk'
+    mainClass = 'io.github.damian1000.desk.web.DeskServerKt'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    testImplementation platform("org.junit:junit-bom:6.1.2")
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    testImplementation 'org.hamcrest:hamcrest:3.0'
+}
+
+test {
+    useJUnitPlatform()
+    finalizedBy jacocoTestReport
+}
+
+// Only the process entry point (DeskServerKt — main() binds the real port and blocks) is
+// excluded, like a Spring Boot Application / CLI MainKt. The rest — routing, the reverse
+// proxy, asset loading, upstream resolution — is exercised over a loopback HttpServer and counted.
+def coverageExclusions = ['**/web/DeskServerKt.class']
+
+jacocoTestReport {
+    dependsOn test
+    afterEvaluate {
+        classDirectories.setFrom(files(classDirectories.files.collect {
+            fileTree(dir: it, excludes: coverageExclusions)
+        }))
+    }
+    reports {
+        xml.required = true
+        html.required = true
+    }
+}
+
+jacocoTestCoverageVerification {
+    dependsOn jacocoTestReport
+    afterEvaluate {
+        classDirectories.setFrom(files(classDirectories.files.collect {
+            fileTree(dir: it, excludes: coverageExclusions)
+        }))
+    }
+    violationRules {
+        rule {
+            limit {
+                counter = 'INSTRUCTION'
+                value = 'COVEREDRATIO'
+                minimum = 0.90
+            }
+        }
+    }
+}
+
+check.dependsOn jacocoTestCoverageVerification
+
+// Formatting runs from here for the whole repo: Kotlin (ktlint), the front-end assets, and
+// the config/docs, all under the one spotlessCheck CI gates on. Prettier needs Node on PATH.
+spotless {
+    kotlin {
+        target 'src/**/*.kt'
+        ktlint('1.5.0')
+    }
+    format 'web', {
+        target 'src/main/resources/web/**/*.html', 'src/main/resources/web/**/*.css', 'src/main/resources/web/**/*.js'
+        prettier('3.4.2')
+        trimTrailingWhitespace()
+        endWithNewline()
+    }
+    format 'config', {
+        target '.github/**/*.yml', '.github/**/*.yaml', '*.md'
+        prettier('3.4.2')
+        trimTrailingWhitespace()
+        endWithNewline()
+    }
+}
+
+// OWASP dependency vulnerability scanner. Run: ./gradlew dependencyCheckAnalyze
+// Fails the build on any dependency with CVSS >= 7.0.
+dependencyCheck {
+    failBuildOnCVSS = 7.0f
+    formats = ['HTML', 'JSON']
+    analyzers {
+        assemblyEnabled = false
+        nodeEnabled = false
+        nodeAuditEnabled = false
+        nuspecEnabled = false
+    }
+}

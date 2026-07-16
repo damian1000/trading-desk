@@ -1,0 +1,14 @@
+{
+  "name": "trading-desk-web",
+  "private": true,
+  "type": "module",
+  "description": "Lint tooling for the trading desk shell front end (src/main/resources/web)",
+  "scripts": {
+    "lint": "eslint src/main/resources/web"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.6.0",
+    "globals": "17.7.0"
+  }
+}

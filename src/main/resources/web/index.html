@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Trading Desk</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="/app.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="mark" aria-hidden="true">&#9670;</span> TRADING DESK
+        <span class="eyebrow"
+          >order book &middot; risk &middot; trading, one workspace</span
+        >
+      </div>
+      <nav class="tabs" role="tablist" aria-label="Desk tabs">
+        <button
+          class="tab active"
+          data-tab="orderbook"
+          role="tab"
+          aria-selected="true"
+        >
+          <span class="kbd">1</span> Order Book
+        </button>
+        <button class="tab" data-tab="risk" role="tab" aria-selected="false">
+          <span class="kbd">2</span> Risk
+        </button>
+        <button class="tab" data-tab="trading" role="tab" aria-selected="false">
+          <span class="kbd">3</span> Trading
+        </button>
+      </nav>
+      <div class="status">
+        <span id="conn" class="dot"></span><span id="connlbl">connecting</span>
+      </div>
+    </header>
+
+    <main class="workspace">
+      <iframe
+        class="frame active"
+        data-frame="orderbook"
+        title="Order Book"
+        src="/orderbook/?embed=1"
+      ></iframe>
+      <iframe
+        class="frame"
+        data-frame="risk"
+        title="Risk"
+        src="/risk/?embed=1"
+      ></iframe>
+      <iframe
+        class="frame"
+        data-frame="trading"
+        title="Trading"
+        src="/trading/?embed=1"
+      ></iframe>
+    </main>
+
+    <footer class="statusbar">
+      <span class="sb-item"
+        ><span id="conn2" class="dot"></span
+        ><span id="connlbl2">connecting</span></span
+      >
+      <span class="sb-item" id="active-label">order book</span>
+      <span class="grow"></span>
+      <span class="sb-item tagline"
+        >single origin &middot; SSE streamed through</span
+      >
+      <span class="sb-item">
+        <a
+          href="https://github.com/damian1000/trading-desk"
+          target="_blank"
+          rel="noopener"
+        >
+          github.com/damian1000/trading-desk
+        </a>
+      </span>
+    </footer>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

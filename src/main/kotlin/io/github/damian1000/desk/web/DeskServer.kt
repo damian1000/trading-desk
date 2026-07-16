@@ -1,0 +1,104 @@
+package io.github.damian1000.desk.web
+
+import com.sun.net.httpserver.HttpExchange
+import com.sun.net.httpserver.HttpServer
+import java.net.InetSocketAddress
+import java.net.http.HttpClient
+import java.nio.charset.StandardCharsets
+import java.time.Duration
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+
+/**
+ * HTTP transport for the trading desk. Serves the shell UI (`/`, `/app.css`, `/app.js`) and hands
+ * everything under a service tab prefix (`/orderbook`, `/risk`, `/trading`) to the [Gateway], which
+ * proxies it to the matching upstream. Plumbing only — routing here, proxying in the gateway,
+ * rendering in the browser. JDK [HttpServer] on a cached pool, which serves the long-lived proxied
+ * SSE streams.
+ */
+class DeskServer(
+    private val assets: WebAssets,
+    private val gateway: Gateway,
+    private val port: Int,
+) {
+    private lateinit var server: HttpServer
+    private lateinit var executor: ExecutorService
+
+    /** Binds and starts serving; requesting port 0 binds an ephemeral port (see [boundPort]). */
+    fun start() {
+        server = HttpServer.create(InetSocketAddress(port), 0)
+        executor = Executors.newCachedThreadPool { Thread(it).apply { isDaemon = true } }
+        server.executor = executor
+        server.createContext("/", ::route)
+        server.start()
+        println("Trading desk listening on :$boundPort")
+    }
+
+    /** The port actually bound — differs from the requested one when 0 (ephemeral) was asked for. */
+    val boundPort: Int get() = server.address.port
+
+    /** Stops accepting connections and shuts down the request pool this server created. */
+    fun stop() {
+        server.stop(0)
+        executor.shutdownNow()
+    }
+
+    private fun route(exchange: HttpExchange) {
+        try {
+            val path = exchange.requestURI.path
+            when {
+                path == "/healthz" -> get(exchange) { respond(exchange, 200, "text/plain", "ok") }
+                path == "/" -> get(exchange) { respond(exchange, 200, "text/html; charset=utf-8", assets.indexHtml) }
+                path == "/app.css" -> get(exchange) { respond(exchange, 200, "text/css; charset=utf-8", assets.appCss) }
+                path == "/app.js" -> get(exchange) { respond(exchange, 200, "text/javascript; charset=utf-8", assets.appJs) }
+                gateway.handles(path) -> gateway.forward(exchange)
+                else -> respond(exchange, 404, "text/plain", "not found")
+            }
+        } catch (e: Exception) {
+            // Anything unexpected must still answer the request — without this the connection
+            // just closes with no status line. The stack goes to stderr -> journalctl.
+            e.printStackTrace()
+            runCatching { respond(exchange, 500, "application/json", """{"error":"internal error"}""") }
+        }
+    }
+
+    private inline fun get(
+        exchange: HttpExchange,
+        handler: () -> Unit,
+    ) {
+        if (exchange.requestMethod == "GET") {
+            handler()
+        } else {
+            exchange.responseHeaders.add("Allow", "GET")
+            respond(exchange, 405, "text/plain", "method not allowed")
+        }
+    }
+
+    private fun respond(
+        exchange: HttpExchange,
+        status: Int,
+        contentType: String,
+        body: String,
+    ) {
+        val bytes = body.toByteArray(StandardCharsets.UTF_8)
+        exchange.responseHeaders.add("Content-Type", contentType)
+        exchange.sendResponseHeaders(status, bytes.size.toLong())
+        exchange.responseBody.use { it.write(bytes) }
+    }
+}
+
+fun main() {
+    val port = (System.getenv("PORT") ?: "8084").toInt()
+    val upstreams = Upstreams.fromEnv(System.getenv())
+    // Follow no redirects and cap the connect wait so an upstream that's down fails fast to a 502
+    // rather than hanging the tab. No request timeout — the proxied SSE streams are open-ended.
+    val client =
+        HttpClient
+            .newBuilder()
+            .connectTimeout(Duration.ofSeconds(5))
+            .followRedirects(HttpClient.Redirect.NEVER)
+            .build()
+    val server = DeskServer(WebAssets.load(), ReverseProxy(upstreams, client), port)
+    Runtime.getRuntime().addShutdownHook(Thread { server.stop() })
+    server.start()
+}

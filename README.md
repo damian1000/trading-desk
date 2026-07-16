@@ -1,0 +1,60 @@
+# trading-desk
+
+[![CI](https://github.com/damian1000/trading-desk/actions/workflows/ci.yml/badge.svg)](https://github.com/damian1000/trading-desk/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/damian1000/trading-desk/actions/workflows/codeql.yml/badge.svg)](https://github.com/damian1000/trading-desk/actions/workflows/codeql.yml)
+
+One trading workspace over three services. The desk presents the live order book, the risk
+report, and the trading dashboard as tabs in a single browser page — one chrome, one status
+bar, one origin — instead of three separate sites.
+
+Live at **[desk.damianhoward.com](https://desk.damianhoward.com)**.
+
+## What it is
+
+A composing gateway. The desk owns no domain logic: [`orderbook`](https://github.com/damian1000/orderbook),
+[`risk-engine`](https://github.com/damian1000/risk-engine), and
+[`trading-system`](https://github.com/damian1000/trading-system) stay standalone, independently
+deployed services. This module serves the shell UI and reverse-proxies each service under a tab
+prefix, so the browser talks to one origin while each backend runs untouched.
+
+```
+Browser ──▶ desk.damianhoward.com
+             ├─ /                     shell: topbar + tab bar + status
+             ├─ /orderbook/**  ─▶  order book service   (live book, SSE)
+             ├─ /risk/**       ─▶  risk-engine          (recompute-on-submit)
+             └─ /trading/**    ─▶  trading-system        (positions off the fill stream, SSE)
+```
+
+Each tab is the real service's front end, embedded with its own topbar and status bar hidden
+(`?embed=1`) so the desk supplies the single surrounding chrome. All three tabs stay mounted, so a
+tab's live stream keeps running while another is in view.
+
+## Routing and streaming
+
+`ReverseProxy` matches a tab prefix, strips it, and forwards the request to the resolved upstream —
+`/orderbook/api/AAPL/stream` becomes `/api/AAPL/stream` against the order book service. The response
+body is streamed chunk-by-chunk with a flush after each write, so an upstream `text/event-stream`
+reaches the browser as frames are produced rather than being buffered until the connection closes.
+An upstream that can't be reached maps to a `502` before any bytes are sent; a client that hangs up
+mid-stream ends the copy.
+
+Upstream bases come from the environment (`ORDERBOOK_UPSTREAM` / `RISK_UPSTREAM` /
+`TRADING_UPSTREAM`), defaulting to the box-local ports, so the same artifact runs against loopback
+in a test and box-local (or cross-box) URLs in production.
+
+## Build and run
+
+```bash
+./gradlew --no-daemon spotlessCheck   # ktlint + Prettier (web assets, YAML, Markdown)
+./gradlew --no-daemon clean check     # tests + 90% instruction coverage gate
+./gradlew installDist && PORT=8084 build/install/trading-desk/bin/trading-desk
+```
+
+With the three services running on their default ports, open `http://localhost:8084`.
+
+## Tests
+
+`ReverseProxy` is exercised over a loopback `HttpServer` upstream — prefix rewrite, query and body
+forwarding, `502` on an unreachable upstream, and SSE frames delivered as they are produced (an
+upstream gate holds the second frame until the first has arrived downstream, so buffering would
+fail the test). `DeskServer` routing and `Upstreams` resolution are covered directly.
