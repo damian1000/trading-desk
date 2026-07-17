@@ -149,6 +149,29 @@ class ReverseProxyTest {
     }
 
     @Test
+    fun `handles is true only for a recognised tab prefix`() {
+        assertTrue(proxy.handles("/orderbook/api/AAPL/state"))
+        assertTrue(proxy.handles("/risk"))
+        assertTrue(proxy.handles("/trading/api/report"))
+        assertTrue(!proxy.handles("/nope"))
+        assertTrue(!proxy.handles("/"))
+    }
+
+    @Test
+    fun `a client that disconnects mid-stream ends the copy without an error`() {
+        val connection = URI("http://localhost:${front.address.port}/orderbook/sse").toURL().openConnection() as HttpURLConnection
+        connection.readTimeout = 5_000
+        connection.inputStream.bufferedReader().use { reader ->
+            assertEquals("frame-1", dataFrame(reader), "first frame should arrive before disconnecting")
+        }
+        connection.disconnect()
+        // Release the upstream's held second frame now that nothing is reading it downstream.
+        sseGate.countDown()
+        Thread.sleep(200)
+        assertEquals(200, request("GET", "/orderbook/api/AAPL/state").statusCode())
+    }
+
+    @Test
     fun `streams SSE frames through as they are produced`() {
         val connection = URI("http://localhost:${front.address.port}/orderbook/sse").toURL().openConnection() as HttpURLConnection
         connection.readTimeout = 5_000

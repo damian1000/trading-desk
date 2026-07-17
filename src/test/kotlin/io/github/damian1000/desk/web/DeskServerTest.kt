@@ -90,4 +90,28 @@ class DeskServerTest {
         assertEquals(405, response.statusCode())
         assertEquals("GET", response.headers().firstValue("Allow").get())
     }
+
+    @Test
+    fun `an unexpected exception from the gateway still answers with a 500`() {
+        val throwingGateway =
+            object : Gateway {
+                override fun handles(path: String): Boolean = true
+
+                override fun forward(exchange: HttpExchange): Unit = throw IllegalStateException("boom")
+            }
+        val throwingServer = DeskServer(WebAssets.load(), throwingGateway, port = 0)
+        throwingServer.start()
+        try {
+            val request =
+                HttpRequest
+                    .newBuilder(URI("http://localhost:${throwingServer.boundPort}/orderbook/anything"))
+                    .GET()
+                    .build()
+            val response = client.send(request, HttpResponse.BodyHandlers.ofString())
+            assertEquals(500, response.statusCode())
+            assertTrue(response.body().contains("internal error"))
+        } finally {
+            throwingServer.stop()
+        }
+    }
 }
