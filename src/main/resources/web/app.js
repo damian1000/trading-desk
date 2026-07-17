@@ -68,6 +68,19 @@
     f.addEventListener("load", markLive);
   });
 
+  // Desk clock, HH:MM:SS local time.
+  var clock = document.getElementById("clock");
+  function tick() {
+    var d = new Date();
+    var p = function (n) {
+      return String(n).padStart(2, "0");
+    };
+    clock.textContent =
+      p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
+  }
+  tick();
+  setInterval(tick, 1000);
+
   // Restore the last tab: ?tab= wins, then the stored choice, then the default (order book).
   var requested = null;
   try {
