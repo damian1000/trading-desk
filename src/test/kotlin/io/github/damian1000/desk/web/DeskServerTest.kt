@@ -18,8 +18,7 @@ class DeskServerTest {
     private class RecordingGateway : Gateway {
         var forwarded: String? = null
 
-        override fun handles(path: String): Boolean =
-            path.startsWith("/orderbook") || path.startsWith("/risk") || path.startsWith("/trading")
+        override fun handles(path: String): Boolean = path.startsWith("/orderbook") || path.startsWith("/trading")
 
         override fun forward(exchange: HttpExchange) {
             forwarded = exchange.requestURI.path

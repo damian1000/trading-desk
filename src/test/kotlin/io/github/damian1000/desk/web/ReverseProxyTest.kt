@@ -57,8 +57,7 @@ class ReverseProxyTest {
         val upstreams =
             Upstreams(
                 orderbook = URI("http://localhost:${upstream.address.port}"),
-                risk = URI("http://localhost:$deadPort"),
-                trading = URI("http://localhost:${upstream.address.port}"),
+                trading = URI("http://localhost:$deadPort"),
             )
         proxy = ReverseProxy(upstreams, client)
         front.start()
@@ -118,7 +117,7 @@ class ReverseProxyTest {
 
     @Test
     fun `forwards the query string`() {
-        val response = request("GET", "/trading/api/report?confidence=99&years=0.25")
+        val response = request("GET", "/orderbook/api/report?confidence=99&years=0.25")
         assertTrue(response.body().contains("query=confidence=99&years=0.25"), response.body())
     }
 
@@ -138,7 +137,7 @@ class ReverseProxyTest {
 
     @Test
     fun `an unreachable upstream is a 502, not a hung tab`() {
-        val response = request("GET", "/risk/api/report")
+        val response = request("GET", "/trading/api/state")
         assertEquals(502, response.statusCode())
         assertTrue(response.body().contains("\"error\""), response.body())
     }
@@ -151,8 +150,8 @@ class ReverseProxyTest {
     @Test
     fun `handles is true only for a recognised tab prefix`() {
         assertTrue(proxy.handles("/orderbook/api/AAPL/state"))
-        assertTrue(proxy.handles("/risk"))
         assertTrue(proxy.handles("/trading/api/report"))
+        assertTrue(!proxy.handles("/risk"))
         assertTrue(!proxy.handles("/nope"))
         assertTrue(!proxy.handles("/"))
     }

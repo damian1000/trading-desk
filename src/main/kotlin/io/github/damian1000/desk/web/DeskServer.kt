@@ -11,7 +11,7 @@ import java.util.concurrent.Executors
 
 /**
  * HTTP transport for the trading desk. Serves the shell UI (`/`, `/app.css`, `/app.js`) and hands
- * everything under a service tab prefix (`/orderbook`, `/risk`, `/trading`) to the [Gateway], which
+ * everything under a service tab prefix (`/orderbook`, `/trading`) to the [Gateway], which
  * proxies it to the matching upstream. Plumbing only — routing here, proxying in the gateway,
  * rendering in the browser. JDK [HttpServer] on a cached pool, which serves the long-lived proxied
  * SSE streams.

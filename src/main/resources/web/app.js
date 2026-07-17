@@ -7,8 +7,8 @@
 (function () {
   "use strict";
 
-  var TABS = ["orderbook", "risk", "trading"];
-  var LABELS = { orderbook: "order book", risk: "risk", trading: "trading" };
+  var TABS = ["orderbook", "trading"];
+  var LABELS = { orderbook: "order book", trading: "trading" };
   var STORAGE_KEY = "desk.tab";
 
   var tabs = Array.prototype.slice.call(document.querySelectorAll(".tab"));
@@ -46,7 +46,7 @@
   // app (iframe events don't reach the parent), which is what a trader typing an order wants.
   document.addEventListener("keydown", function (e) {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
-    var index = ["1", "2", "3"].indexOf(e.key);
+    var index = ["1", "2"].indexOf(e.key);
     if (index !== -1) activate(TABS[index]);
   });
 

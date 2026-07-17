@@ -4,31 +4,31 @@
 [![codecov](https://codecov.io/gh/damian1000/trading-desk/graph/badge.svg)](https://codecov.io/gh/damian1000/trading-desk)
 [![CodeQL](https://github.com/damian1000/trading-desk/actions/workflows/codeql.yml/badge.svg)](https://github.com/damian1000/trading-desk/actions/workflows/codeql.yml)
 
-One trading workspace over three services. The desk presents the live order book, the risk
-report, and the trading dashboard as tabs in a single browser page — one chrome, one status
-bar, one origin — instead of three separate sites.
+One trading workspace over two services. The desk presents the live order book and the trading
+dashboard — positions, risk, and PnL off the fill stream — as tabs in a single browser page:
+one chrome, one status bar, one origin.
 
 Live at **[desk.damianhoward.com](https://desk.damianhoward.com)**.
 
 ## What it is
 
-A composing gateway. The desk owns no domain logic: [`orderbook`](https://github.com/damian1000/orderbook),
-[`risk-engine`](https://github.com/damian1000/risk-engine), and
-[`trading-system`](https://github.com/damian1000/trading-system) stay standalone, independently
+A composing gateway. The desk owns no domain logic: [`orderbook`](https://github.com/damian1000/orderbook)
+and [`trading-system`](https://github.com/damian1000/trading-system) stay standalone, independently
 deployed services. This module serves the shell UI and reverse-proxies each service under a tab
-prefix, so the browser talks to one origin while each backend runs untouched.
+prefix, so the browser talks to one origin while each backend runs untouched. The trading tab's
+risk numbers come from the [`risk-engine`](https://github.com/damian1000/risk-engine) library,
+which also runs standalone at [risk.damianhoward.com](https://risk.damianhoward.com).
 
 ```
 Browser ──▶ desk.damianhoward.com
              ├─ /                     shell: topbar + tab bar + status
              ├─ /orderbook/**  ─▶  order book service   (live book, SSE)
-             ├─ /risk/**       ─▶  risk-engine          (recompute-on-submit)
              └─ /trading/**    ─▶  trading-system        (positions off the fill stream, SSE)
 ```
 
 Each tab is the real service's front end, embedded with its own topbar and status bar hidden
-(`?embed=1`) so the desk supplies the single surrounding chrome. All three tabs stay mounted, so a
-tab's live stream keeps running while another is in view.
+(`?embed=1`) so the desk supplies the single surrounding chrome. Both tabs stay mounted, so a
+tab's live stream keeps running while the other is in view.
 
 ## Routing and streaming
 
@@ -39,9 +39,9 @@ reaches the browser as frames are produced rather than being buffered until the 
 An upstream that can't be reached maps to a `502` before any bytes are sent; a client that hangs up
 mid-stream ends the copy.
 
-Upstream bases come from the environment (`ORDERBOOK_UPSTREAM` / `RISK_UPSTREAM` /
-`TRADING_UPSTREAM`), defaulting to the box-local ports, so the same artifact runs against loopback
-in a test and box-local (or cross-box) URLs in production.
+Upstream bases come from the environment (`ORDERBOOK_UPSTREAM` / `TRADING_UPSTREAM`), defaulting
+to the box-local ports, so the same artifact runs against loopback in a test and box-local (or
+cross-box) URLs in production.
 
 ## Build and run
 
@@ -51,7 +51,7 @@ in a test and box-local (or cross-box) URLs in production.
 ./gradlew installDist && PORT=8084 build/install/trading-desk/bin/trading-desk
 ```
 
-With the three services running on their default ports, open `http://localhost:8084`.
+With the two services running on their default ports, open `http://localhost:8084`.
 
 ## Tests
 

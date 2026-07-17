@@ -9,7 +9,6 @@ class UpstreamsTest {
     private val upstreams =
         Upstreams(
             orderbook = URI("http://localhost:8080"),
-            risk = URI("http://localhost:8081"),
             trading = URI("http://localhost:8082"),
         )
 
@@ -17,7 +16,6 @@ class UpstreamsTest {
     fun `fromEnv falls back to the box-local ports`() {
         val upstreams = Upstreams.fromEnv(emptyMap())
         assertEquals(URI("http://localhost:8080"), upstreams.orderbook)
-        assertEquals(URI("http://localhost:8081"), upstreams.risk)
         assertEquals(URI("http://localhost:8082"), upstreams.trading)
     }
 
@@ -27,7 +25,6 @@ class UpstreamsTest {
             Upstreams.fromEnv(
                 mapOf(
                     "ORDERBOOK_UPSTREAM" to "http://10.0.0.150:8080",
-                    "RISK_UPSTREAM" to "http://10.0.0.150:8081",
                     "TRADING_UPSTREAM" to "https://trading.damianhoward.com",
                 ),
             )
@@ -50,7 +47,7 @@ class UpstreamsTest {
 
     @Test
     fun `each tab routes to its own service`() {
-        assertEquals(URI("http://localhost:8081"), upstreams.resolve("/risk/api/report")!!.base)
+        assertEquals(URI("http://localhost:8080"), upstreams.resolve("/orderbook/api/AAPL/state")!!.base)
         assertEquals(URI("http://localhost:8082"), upstreams.resolve("/trading/api/stream")!!.base)
     }
 
