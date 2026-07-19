@@ -7,7 +7,7 @@ pluginManagement {
     resolutionStrategy {
         eachPlugin {
             if (requested.id.namespace == 'io.github.damian1000') {
-                useModule("com.github.damian1000:build-conventions:${requested.version}")
+                useModule("com.github.damian1000.build-conventions:plugins:${requested.version}")
             }
         }
     }
@@ -16,6 +16,19 @@ pluginManagement {
 plugins {
     // Provisions the JDK 25 toolchain on machines that lack it.
     id 'org.gradle.toolchains.foojay-resolver-convention' version '1.0.0'
+}
+
+// The shared version catalog: versions two or more repos genuinely share (see the
+// build-conventions repo); application-specific dependencies stay in the build files.
+dependencyResolutionManagement {
+    repositories {
+        maven { url 'https://jitpack.io' }
+    }
+    versionCatalogs {
+        create('deps') {
+            from 'com.github.damian1000.build-conventions:catalog:0.4.1'
+        }
+    }
 }
 
 rootProject.name = 'trading-desk'

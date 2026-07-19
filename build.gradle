@@ -3,7 +3,7 @@
 // no domain logic — each service stays a standalone, independently deployed app; this module
 // only routes to them (streaming SSE through untouched) and serves the shell chrome.
 plugins {
-    id 'io.github.damian1000.kotlin-conventions' version '0.3.0'
+    id 'io.github.damian1000.kotlin-conventions' version '0.4.1'
     id 'application'
 }
 
@@ -16,7 +16,7 @@ application {
 }
 
 dependencies {
-    testImplementation 'org.hamcrest:hamcrest:3.0'
+    testImplementation deps.hamcrest
 }
 
 // Only the process entry point (DeskServerKt — main() binds the real port and blocks) is
