@@ -3,14 +3,19 @@ package io.github.damian1000.desk.web
 import com.sun.net.httpserver.HttpExchange
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import java.io.IOException
+import java.net.HttpURLConnection
 import java.net.URI
 import java.net.http.HttpClient
 import java.net.http.HttpRequest
 import java.net.http.HttpResponse
 import java.nio.charset.StandardCharsets
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /** Loopback tests over a real [DeskServer]: static routes serve the shell, tab prefixes delegate. */
 class DeskServerTest {
@@ -88,6 +93,46 @@ class DeskServerTest {
         val response = request("POST", "/")
         assertEquals(405, response.statusCode())
         assertEquals("GET", response.headers().firstValue("Allow").get())
+    }
+
+    // Rejection happens before any handler runs, so the refused connection closes with no HTTP
+    // status line — the client sees a connection-level failure, which is the documented contract.
+    @Test
+    fun `requests beyond the thread cap are refused rather than queued`() {
+        val started = CountDownLatch(2)
+        val hold = CountDownLatch(1)
+        val holdingGateway =
+            object : Gateway {
+                override fun handles(path: String): Boolean = true
+
+                override fun forward(exchange: HttpExchange) {
+                    exchange.sendResponseHeaders(200, 0)
+                    exchange.responseBody.flush()
+                    started.countDown()
+                    hold.await()
+                    exchange.responseBody.close()
+                }
+            }
+        val saturated = DeskServer(WebAssets.load(), holdingGateway, port = 0, maxPoolThreads = 2)
+        saturated.start()
+        try {
+            val streams =
+                (1..2).map {
+                    val connection =
+                        URI(
+                            "http://localhost:${saturated.boundPort}/orderbook/stream-$it",
+                        ).toURL().openConnection() as HttpURLConnection
+                    assertEquals(200, connection.responseCode)
+                    connection
+                }
+            assertTrue(started.await(5, TimeUnit.SECONDS), "both held streams should be pinning pool threads")
+            val request = HttpRequest.newBuilder(URI("http://localhost:${saturated.boundPort}/healthz")).GET().build()
+            assertThrows(IOException::class.java) { client.send(request, HttpResponse.BodyHandlers.ofString()) }
+            streams.forEach { it.disconnect() }
+        } finally {
+            hold.countDown()
+            saturated.stop()
+        }
     }
 
     @Test

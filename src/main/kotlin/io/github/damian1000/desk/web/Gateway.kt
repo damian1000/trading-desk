@@ -73,10 +73,15 @@ class ReverseProxy(
     ): HttpRequest {
         val method = exchange.requestMethod
         val builder = HttpRequest.newBuilder(target)
-        // Forward only the content negotiation headers the apps rely on; Host/Connection/
+        // Forward the content negotiation headers the apps rely on; Host/Connection/
         // Content-Length are managed by HttpClient and rejected if set here.
         exchange.requestHeaders.getFirst("Content-Type")?.let { builder.header("Content-Type", it) }
         exchange.requestHeaders.getFirst("Accept")?.let { builder.header("Accept", it) }
+        // Append this hop's peer to X-Forwarded-For so upstreams can still resolve the real
+        // client behind the desk (Caddy already appended it before the desk saw the request).
+        val peer = exchange.remoteAddress.address.hostAddress
+        val inbound = exchange.requestHeaders.getFirst("X-Forwarded-For")
+        builder.header("X-Forwarded-For", if (inbound.isNullOrBlank()) peer else "$inbound, $peer")
         val body =
             if (method in BODY_METHODS) {
                 HttpRequest.BodyPublishers.ofInputStream { exchange.requestBody }

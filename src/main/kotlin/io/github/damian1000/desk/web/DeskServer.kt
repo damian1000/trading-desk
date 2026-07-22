@@ -7,19 +7,23 @@ import java.net.http.HttpClient
 import java.nio.charset.StandardCharsets
 import java.time.Duration
 import java.util.concurrent.ExecutorService
-import java.util.concurrent.Executors
+import java.util.concurrent.SynchronousQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 
 /**
  * HTTP transport for the trading desk. Serves the shell UI (`/`, `/app.css`, `/app.js`) and hands
  * everything under a service tab prefix (`/orderbook`, `/trading`) to the [Gateway], which
  * proxies it to the matching upstream. Plumbing only — routing here, proxying in the gateway,
- * rendering in the browser. JDK [HttpServer] on a cached pool, which serves the long-lived proxied
- * SSE streams.
+ * rendering in the browser. JDK [HttpServer] on a request pool capped at [maxPoolThreads]; each
+ * proxied SSE stream pins one pool thread for its connection's lifetime, and requests beyond the
+ * cap are refused at the connection rather than queued.
  */
 class DeskServer(
     private val assets: WebAssets,
     private val gateway: Gateway,
     private val port: Int,
+    private val maxPoolThreads: Int = 64,
 ) {
     private lateinit var server: HttpServer
     private lateinit var executor: ExecutorService
@@ -27,7 +31,14 @@ class DeskServer(
     /** Binds and starts serving; requesting port 0 binds an ephemeral port (see [boundPort]). */
     fun start() {
         server = HttpServer.create(InetSocketAddress(port), 0)
-        executor = Executors.newCachedThreadPool { Thread(it).apply { isDaemon = true } }
+        // Cached-pool reuse and keep-alive but with a hard thread ceiling: SSE streams hold their
+        // pool thread, so an unbounded pool lets slow-reading clients grow memory without limit.
+        // No work queue — a request queued behind saturated SSE streams would wait forever, so
+        // saturation refuses the new connection instead.
+        executor =
+            ThreadPoolExecutor(0, maxPoolThreads, 60L, TimeUnit.SECONDS, SynchronousQueue()) {
+                Thread(it).apply { isDaemon = true }
+            }
         server.executor = executor
         server.createContext("/", ::route)
         server.start()

@@ -73,9 +73,10 @@ class ReverseProxyTest {
     private fun echo(exchange: HttpExchange) {
         val body = exchange.requestBody.readBytes().toString(StandardCharsets.UTF_8)
         val contentType = exchange.requestHeaders.getFirst("Content-Type") ?: ""
+        val forwardedFor = exchange.requestHeaders.getFirst("X-Forwarded-For") ?: ""
         val text =
             "method=${exchange.requestMethod} path=${exchange.requestURI.path} " +
-                "query=${exchange.requestURI.rawQuery ?: ""} body=$body ct=$contentType"
+                "query=${exchange.requestURI.rawQuery ?: ""} body=$body ct=$contentType xff=[$forwardedFor]"
         val bytes = text.toByteArray(StandardCharsets.UTF_8)
         exchange.responseHeaders.add("Content-Type", "text/plain")
         exchange.sendResponseHeaders(200, bytes.size.toLong())
@@ -101,11 +102,18 @@ class ReverseProxyTest {
         path: String,
         body: String? = null,
         contentType: String? = null,
+        forwardedFor: String? = null,
     ): HttpResponse<String> {
         val publisher = if (body == null) HttpRequest.BodyPublishers.noBody() else HttpRequest.BodyPublishers.ofString(body)
         val builder = HttpRequest.newBuilder(URI("http://localhost:${front.address.port}$path")).method(method, publisher)
         if (contentType != null) builder.header("Content-Type", contentType)
+        if (forwardedFor != null) builder.header("X-Forwarded-For", forwardedFor)
         return client.send(builder.build(), HttpResponse.BodyHandlers.ofString())
+    }
+
+    private fun forwardedForOf(echoed: String): String {
+        val match = Regex("""xff=\[([^\]]*)]""").find(echoed) ?: error("no xff in: $echoed")
+        return match.groupValues[1]
     }
 
     @Test
@@ -133,6 +141,20 @@ class ReverseProxyTest {
         assertTrue(response.body().contains("method=POST"), response.body())
         assertTrue(response.body().contains("body=equityQty=100"), response.body())
         assertTrue(response.body().contains("ct=application/x-www-form-urlencoded"), response.body())
+    }
+
+    @Test
+    fun `identifies the connecting peer as X-Forwarded-For when none arrived`() {
+        val forwardedFor = forwardedForOf(request("GET", "/orderbook/api/AAPL/state").body())
+        assertTrue(forwardedFor.isNotBlank(), "expected the peer address, got '$forwardedFor'")
+        assertTrue(!forwardedFor.contains(","), "expected a single hop, got '$forwardedFor'")
+    }
+
+    @Test
+    fun `appends the connecting peer to an inbound X-Forwarded-For chain`() {
+        val forwardedFor = forwardedForOf(request("GET", "/orderbook/api/AAPL/state", forwardedFor = "203.0.113.9").body())
+        assertTrue(forwardedFor.startsWith("203.0.113.9, "), "expected the inbound chain kept, got '$forwardedFor'")
+        assertTrue(forwardedFor.length > "203.0.113.9, ".length, "expected the peer appended, got '$forwardedFor'")
     }
 
     @Test
