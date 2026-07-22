@@ -92,7 +92,17 @@ class DeskServerTest {
     fun `the shell routes reject non-GET methods`() {
         val response = request("POST", "/")
         assertEquals(405, response.statusCode())
-        assertEquals("GET", response.headers().firstValue("Allow").get())
+        assertEquals("GET, HEAD", response.headers().firstValue("Allow").get())
+    }
+
+    @Test
+    fun `HEAD answers every shell route with the GET's status and headers, minus the body`() {
+        for (path in listOf("/", "/healthz", "/app.css", "/app.js")) {
+            val head = request("HEAD", path)
+            assertEquals(request("GET", path).statusCode(), head.statusCode(), path)
+            assertEquals("", head.body(), path)
+        }
+        assertEquals("text/html; charset=utf-8", request("HEAD", "/").headers().firstValue("Content-Type").get())
     }
 
     // Rejection happens before any handler runs, so the refused connection closes with no HTTP

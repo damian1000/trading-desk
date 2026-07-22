@@ -73,14 +73,16 @@ class DeskServer(
         }
     }
 
+    // HEAD rides every GET route: the handler runs identically and respond() suppresses the body,
+    // so the status and headers a HEAD probe sees are the ones the GET would have produced.
     private inline fun get(
         exchange: HttpExchange,
         handler: () -> Unit,
     ) {
-        if (exchange.requestMethod == "GET") {
+        if (exchange.requestMethod == "GET" || exchange.requestMethod == "HEAD") {
             handler()
         } else {
-            exchange.responseHeaders.add("Allow", "GET")
+            exchange.responseHeaders.add("Allow", "GET, HEAD")
             respond(exchange, 405, "text/plain", "method not allowed")
         }
     }
@@ -93,8 +95,15 @@ class DeskServer(
     ) {
         val bytes = body.toByteArray(StandardCharsets.UTF_8)
         exchange.responseHeaders.add("Content-Type", contentType)
-        exchange.sendResponseHeaders(status, bytes.size.toLong())
-        exchange.responseBody.use { it.write(bytes) }
+        if (exchange.requestMethod == "HEAD") {
+            // Headers only: -1 tells the JDK server no body follows, which is the one length it
+            // accepts on a HEAD without logging a warning (it drops Content-Length either way).
+            exchange.sendResponseHeaders(status, -1)
+            exchange.close()
+        } else {
+            exchange.sendResponseHeaders(status, bytes.size.toLong())
+            exchange.responseBody.use { it.write(bytes) }
+        }
     }
 }
 

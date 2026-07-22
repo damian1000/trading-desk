@@ -53,6 +53,14 @@ class ReverseProxy(
         exchange.responseHeaders.add("Content-Type", response.headers().firstValue("content-type").orElse("application/octet-stream"))
         // Carry Cache-Control through so the upstream's "no-cache" on the SSE stream is honoured.
         response.headers().firstValue("cache-control").ifPresent { exchange.responseHeaders.add("Cache-Control", it) }
+        if (exchange.requestMethod == "HEAD") {
+            // The upstream already answered the HEAD with no body; relay headers-only rather than
+            // opening a chunked stream the JDK server would warn about on a HEAD.
+            response.body().close()
+            exchange.sendResponseHeaders(response.statusCode(), -1)
+            exchange.close()
+            return
+        }
         // Length 0 selects chunked transfer, which is what an open-ended SSE stream needs.
         exchange.sendResponseHeaders(response.statusCode(), 0)
         stream(response.body(), exchange)
@@ -122,8 +130,14 @@ class ReverseProxy(
     ) {
         val bytes = body.toByteArray(StandardCharsets.UTF_8)
         exchange.responseHeaders.add("Content-Type", contentType)
-        exchange.sendResponseHeaders(status, bytes.size.toLong())
-        exchange.responseBody.use { it.write(bytes) }
+        if (exchange.requestMethod == "HEAD") {
+            // Headers only — see DeskServer.respond for why the length is -1 on a HEAD.
+            exchange.sendResponseHeaders(status, -1)
+            exchange.close()
+        } else {
+            exchange.sendResponseHeaders(status, bytes.size.toLong())
+            exchange.responseBody.use { it.write(bytes) }
+        }
     }
 
     companion object {

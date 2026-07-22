@@ -165,6 +165,21 @@ class ReverseProxyTest {
     }
 
     @Test
+    fun `relays a HEAD as the upstream's status and headers with no body`() {
+        val response = request("HEAD", "/orderbook/api/AAPL/state")
+        assertEquals(200, response.statusCode())
+        assertEquals("text/plain", response.headers().firstValue("Content-Type").get())
+        assertEquals("", response.body())
+    }
+
+    @Test
+    fun `a HEAD to an unreachable upstream is still a bodyless 502`() {
+        val response = request("HEAD", "/trading/api/state")
+        assertEquals(502, response.statusCode())
+        assertEquals("", response.body())
+    }
+
+    @Test
     fun `a path with no tab prefix is a 404`() {
         assertEquals(404, request("GET", "/nope").statusCode())
     }

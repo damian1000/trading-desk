@@ -3,6 +3,14 @@
 # services itself, so Caddy only fronts one upstream here. flush_interval -1 keeps the proxied
 # SSE streams unbuffered end to end.
 desk.damianhoward.com {
+	# Baseline hardening on every response. frame-ancestors is 'self', not 'none', because the
+	# desk's own tabs are same-origin iframes served through its gateway.
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		Content-Security-Policy "frame-ancestors 'self'"
+	}
 	reverse_proxy localhost:8084 {
 		flush_interval -1
 	}
