@@ -4,6 +4,8 @@ import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import java.net.InetSocketAddress
 import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
 import java.nio.charset.StandardCharsets
 import java.time.Duration
 import java.util.concurrent.ExecutorService
@@ -15,14 +17,17 @@ import java.util.concurrent.TimeUnit
  * HTTP transport for the trading desk. Serves the shell UI (`/`, `/app.css`, `/app.js`) and hands
  * everything under a service tab prefix (`/orderbook`, `/trading`) to the [Gateway], which
  * proxies it to the matching upstream. Plumbing only — routing here, proxying in the gateway,
- * rendering in the browser. JDK [HttpServer] on a request pool capped at [maxPoolThreads]; each
- * proxied SSE stream pins one pool thread for its connection's lifetime, and requests beyond the
- * cap are refused at the connection rather than queued.
+ * rendering in the browser. `/healthz` proves the desk process answers; `/readyz` (see [Readiness])
+ * proves its upstreams are reachable, so a deploy whose tabs would 502 reads as not-ready. JDK
+ * [HttpServer] on a request pool capped at [maxPoolThreads]; each proxied SSE stream pins one pool
+ * thread for its connection's lifetime, and requests beyond the cap are refused at the connection
+ * rather than queued.
  */
 class DeskServer(
     private val assets: WebAssets,
     private val gateway: Gateway,
     private val port: Int,
+    private val readiness: Readiness? = null,
     private val maxPoolThreads: Int = 64,
 ) {
     private lateinit var server: HttpServer
@@ -59,6 +64,7 @@ class DeskServer(
             val path = exchange.requestURI.path
             when {
                 path == "/healthz" -> get(exchange) { respond(exchange, 200, "text/plain", "ok") }
+                path == "/readyz" -> get(exchange) { ready(exchange) }
                 path == "/" -> get(exchange) { respond(exchange, 200, "text/html; charset=utf-8", assets.indexHtml) }
                 path == "/app.css" -> get(exchange) { respond(exchange, 200, "text/css; charset=utf-8", assets.appCss) }
                 path == "/app.js" -> get(exchange) { respond(exchange, 200, "text/javascript; charset=utf-8", assets.appJs) }
@@ -70,6 +76,17 @@ class DeskServer(
             // just closes with no status line. The stack goes to stderr -> journalctl.
             e.printStackTrace()
             runCatching { respond(exchange, 500, "application/json", """{"error":"internal error"}""") }
+        }
+    }
+
+    // Liveness says the desk process answers; this says its upstreams are reachable. With no
+    // readiness wired (a bare test server), it is a plain ready — there is nothing to probe.
+    private fun ready(exchange: HttpExchange) {
+        val probe = readiness?.probe()
+        if (probe == null) {
+            respond(exchange, 200, "application/json", """{"ready":true}""")
+        } else {
+            respond(exchange, if (probe.ready) 200 else 503, "application/json", probe.json)
         }
     }
 
@@ -118,7 +135,24 @@ fun main() {
             .connectTimeout(Duration.ofSeconds(5))
             .followRedirects(HttpClient.Redirect.NEVER)
             .build()
-    val server = DeskServer(WebAssets.load(), ReverseProxy(upstreams, client), port)
+    // Readiness probes each upstream's /healthz on the same client, with a per-request timeout so a
+    // hung upstream fails closed rather than stalling the probe. /healthz (not /readyz) is what
+    // every service exposes and is the reachability signal the desk needs — can it serve this tab.
+    val readiness =
+        Readiness(upstreams) { base ->
+            try {
+                val probe =
+                    HttpRequest
+                        .newBuilder(base.resolve("/healthz"))
+                        .timeout(Duration.ofSeconds(2))
+                        .GET()
+                        .build()
+                client.send(probe, HttpResponse.BodyHandlers.discarding()).statusCode() in 200..299
+            } catch (_: Exception) {
+                false
+            }
+        }
+    val server = DeskServer(WebAssets.load(), ReverseProxy(upstreams, client), port, readiness)
     Runtime.getRuntime().addShutdownHook(Thread { server.stop() })
     server.start()
 }

@@ -61,11 +61,55 @@ class DeskServerTest {
         return client.send(request, HttpResponse.BodyHandlers.ofString())
     }
 
+    private fun getAt(
+        port: Int,
+        path: String,
+    ): HttpResponse<String> =
+        client.send(
+            HttpRequest.newBuilder(URI("http://localhost:$port$path")).GET().build(),
+            HttpResponse.BodyHandlers.ofString(),
+        )
+
     @Test
     fun `healthz responds ok`() {
         val response = request("GET", "/healthz")
         assertEquals(200, response.statusCode())
         assertEquals("ok", response.body())
+    }
+
+    @Test
+    fun `readyz is a plain ready when no readiness is wired`() {
+        val response = request("GET", "/readyz")
+        assertEquals(200, response.statusCode())
+        assertTrue(response.body().contains(""""ready":true"""))
+    }
+
+    @Test
+    fun `readyz is 200 when every upstream is reachable`() {
+        val upstreams = Upstreams(URI("http://ob"), URI("http://ts"))
+        val ready = DeskServer(WebAssets.load(), gateway, port = 0, readiness = Readiness(upstreams) { true })
+        ready.start()
+        try {
+            val response = getAt(ready.boundPort, "/readyz")
+            assertEquals(200, response.statusCode())
+            assertTrue(response.body().contains(""""ready":true"""))
+        } finally {
+            ready.stop()
+        }
+    }
+
+    @Test
+    fun `readyz is 503 and names the upstream when one is unreachable`() {
+        val upstreams = Upstreams(URI("http://ob"), URI("http://ts"))
+        val server = DeskServer(WebAssets.load(), gateway, port = 0, readiness = Readiness(upstreams) { it == upstreams.orderbook })
+        server.start()
+        try {
+            val response = getAt(server.boundPort, "/readyz")
+            assertEquals(503, response.statusCode())
+            assertTrue(response.body().contains(""""trading":{"ok":false}"""))
+        } finally {
+            server.stop()
+        }
     }
 
     @Test
@@ -97,7 +141,7 @@ class DeskServerTest {
 
     @Test
     fun `HEAD answers every shell route with the GET's status and headers, minus the body`() {
-        for (path in listOf("/", "/healthz", "/app.css", "/app.js")) {
+        for (path in listOf("/", "/healthz", "/readyz", "/app.css", "/app.js")) {
             val head = request("HEAD", path)
             assertEquals(request("GET", path).statusCode(), head.statusCode(), path)
             assertEquals("", head.body(), path)

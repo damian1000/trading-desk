@@ -31,6 +31,9 @@ data class Upstreams(
         return Resolved(base, stripped.ifEmpty { "/" })
     }
 
+    /** Each upstream keyed by tab name (the prefix without its slash) — for the readiness probe. */
+    fun bases(): Map<String, URI> = routes.associate { (prefix, base) -> prefix.removePrefix("/") to base }
+
     data class Resolved(
         val base: URI,
         val path: String,
