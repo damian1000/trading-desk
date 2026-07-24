@@ -113,6 +113,14 @@ class DeskServerTest {
     }
 
     @Test
+    fun `serves the privacy notice`() {
+        val response = request("GET", "/privacy")
+        assertEquals(200, response.statusCode())
+        assertEquals("text/html; charset=utf-8", response.headers().firstValue("Content-Type").get())
+        assertTrue(response.body().contains("Privacy"))
+    }
+
+    @Test
     fun `serves the shell with content types`() {
         assertTrue(request("GET", "/").body().contains("TRADING DESK"))
         assertEquals("text/css; charset=utf-8", request("GET", "/app.css").headers().firstValue("Content-Type").get())
@@ -141,7 +149,7 @@ class DeskServerTest {
 
     @Test
     fun `HEAD answers every shell route with the GET's status and headers, minus the body`() {
-        for (path in listOf("/", "/healthz", "/readyz", "/app.css", "/app.js")) {
+        for (path in listOf("/", "/healthz", "/readyz", "/privacy", "/app.css", "/app.js")) {
             val head = request("HEAD", path)
             assertEquals(request("GET", path).statusCode(), head.statusCode(), path)
             assertEquals("", head.body(), path)

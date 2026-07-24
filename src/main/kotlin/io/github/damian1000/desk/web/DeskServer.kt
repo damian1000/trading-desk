@@ -66,6 +66,7 @@ class DeskServer(
                 path == "/healthz" -> get(exchange) { respond(exchange, 200, "text/plain", "ok") }
                 path == "/readyz" -> get(exchange) { ready(exchange) }
                 path == "/" -> get(exchange) { respond(exchange, 200, "text/html; charset=utf-8", assets.indexHtml) }
+                path == "/privacy" -> get(exchange) { respond(exchange, 200, "text/html; charset=utf-8", assets.privacyHtml) }
                 path == "/app.css" -> get(exchange) { respond(exchange, 200, "text/css; charset=utf-8", assets.appCss) }
                 path == "/app.js" -> get(exchange) { respond(exchange, 200, "text/javascript; charset=utf-8", assets.appJs) }
                 gateway.handles(path) -> gateway.forward(exchange)
