@@ -1,8 +1,8 @@
 # trading-desk
 
 [![CI](https://github.com/damian1000/trading-desk/actions/workflows/ci.yml/badge.svg)](https://github.com/damian1000/trading-desk/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/damian1000/trading-desk/graph/badge.svg)](https://codecov.io/gh/damian1000/trading-desk)
 [![CodeQL](https://github.com/damian1000/trading-desk/actions/workflows/codeql.yml/badge.svg)](https://github.com/damian1000/trading-desk/actions/workflows/codeql.yml)
+[![codecov](https://codecov.io/gh/damian1000/trading-desk/graph/badge.svg)](https://codecov.io/gh/damian1000/trading-desk)
 
 One trading workspace over two services. The desk presents the live order book and the trading
 dashboard — positions, risk, and PnL off the fill stream — as tabs in a single browser page:
