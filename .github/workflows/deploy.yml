@@ -17,21 +17,21 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up JDK 25
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
         with:
           distribution: temurin
           java-version: "25"
 
       - name: Set up Node # Prettier (web + config formatting) runs under Spotless
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
+        uses: gradle/actions/setup-gradle@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
 
       # The deploy pipeline re-verifies the full gate before packaging — CD owns its own
       # go/no-go rather than trusting a separate workflow, and ships the bytes it just tested.
@@ -42,7 +42,7 @@ jobs:
         run: tar -czf trading-desk-dist.tar.gz -C build/install trading-desk
 
       - name: Upload distribution
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: trading-desk-dist
           path: trading-desk-dist.tar.gz
@@ -55,10 +55,11 @@ jobs:
       name: production
       url: https://desk.damianhoward.com
     steps:
-      - uses: actions/checkout@v7 # for deploy/trading-desk.service
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        # for deploy/trading-desk.service and deploy/known_hosts.pub
 
       - name: Download distribution
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: trading-desk-dist
 
@@ -70,7 +71,14 @@ jobs:
           install -m 700 -d ~/.ssh
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          # Pinned host key rather than ssh-keyscan: trust-on-first-use accepts whatever answers
+          # on the address, so anything that could take over it would be handed the deploy key
+          # and the artifact. deploy/known_hosts.pub holds the key without the host field — an
+          # SSH host key is public by design, while the address stays in the secret.
+          awk -v host="$DEPLOY_HOST" '{ print host, $0 }' deploy/known_hosts.pub > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+          printf 'Host *\n  StrictHostKeyChecking yes\n  IdentitiesOnly yes\n' > ~/.ssh/config
+          chmod 600 ~/.ssh/config
 
       - name: Ship artifact and service unit
         env:
@@ -80,48 +88,101 @@ jobs:
           scp -i ~/.ssh/deploy_key trading-desk-dist.tar.gz "$DEPLOY_USER@$DEPLOY_HOST:/tmp/trading-desk-dist.tar.gz"
           scp -i ~/.ssh/deploy_key deploy/trading-desk.service "$DEPLOY_USER@$DEPLOY_HOST:/tmp/trading-desk.service"
 
-      - name: Release and restart
+      # Release, health check and rollback are one remote script so the decision to roll back is
+      # made on the box: a runner that dies between "restart" and "check" cannot leave a broken
+      # release serving with nothing left to react to it.
+      - name: Release, verify, and roll back on failure
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
         run: |
-          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" 'bash -seuo pipefail' <<'REMOTE'
-          APP="$HOME/trading-desk"
+          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" \
+            bash -seuo pipefail "$GITHUB_SHA" <<'REMOTE'
+          app="trading-desk"
+          hold_seconds=20
+          release="${1:-manual-$(date +%Y%m%d%H%M%S)}"
+          link="$HOME/$app"
+          releases="$HOME/releases/$app"
+          target="$releases/$release"
 
-          # Retain the current release for rollback, then unpack the new one in place.
-          rm -rf "$APP-prev"
-          [ -d "$APP" ] && cp -a "$APP" "$APP-prev"
-          tmp="$(mktemp -d)"
-          tar -xzf /tmp/trading-desk-dist.tar.gz -C "$tmp"
-          mkdir -p "$APP"
-          rm -rf "$APP/bin" "$APP/lib"
-          cp -a "$tmp/trading-desk/bin" "$tmp/trading-desk/lib" "$APP/"
-          rm -rf "$tmp" /tmp/trading-desk-dist.tar.gz
+          mkdir -p "$releases"
+          rm -rf "$target"
+          mkdir -p "$target"
+          tar -xzf "/tmp/$app-dist.tar.gz" -C "$target" --strip-components=1
+          rm -f "/tmp/$app-dist.tar.gz"
 
           # Keep the host's unit in lockstep with the version-controlled one.
-          if ! cmp -s /tmp/trading-desk.service /etc/systemd/system/trading-desk.service; then
-            sudo cp /tmp/trading-desk.service /etc/systemd/system/trading-desk.service
+          if ! cmp -s "/tmp/$app.service" "/etc/systemd/system/$app.service"; then
+            sudo cp "/tmp/$app.service" "/etc/systemd/system/$app.service"
             sudo systemctl daemon-reload
           fi
-          rm -f /tmp/trading-desk.service
+          rm -f "/tmp/$app.service"
 
-          sudo systemctl restart trading-desk
-          REMOTE
+          # First release under this scheme: the install path is still a real directory, so it
+          # becomes the rollback target rather than being deleted.
+          if [ -d "$link" ] && [ ! -L "$link" ]; then
+            previous="$releases/legacy"
+            rm -rf "$previous"
+            mv "$link" "$previous"
+          else
+            previous="$(readlink -f "$link" 2>/dev/null || true)"
+          fi
 
-      - name: Health check
-        env:
-          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
-          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
-        run: |
-          ssh -i ~/.ssh/deploy_key "$DEPLOY_USER@$DEPLOY_HOST" 'bash -seuo pipefail' <<'REMOTE'
-          for attempt in $(seq 1 15); do
-            code="$(curl -fsS -o /dev/null -w '%{http_code}' http://localhost:8084/healthz || true)"
-            if [ "$code" = "200" ]; then
-              echo "healthy after ${attempt} attempt(s)"
-              exit 0
+          # Swapping a symlink through rename() is atomic: the service never sees a half-copied
+          # install, which the old "delete bin and lib, then copy" release could expose.
+          switch_to() {
+            ln -sfn "$1" "$link.staging"
+            mv -Tf "$link.staging" "$link"
+          }
+
+          healthy() {
+            [ "$(curl -fsS -o /dev/null -w '%{http_code}' http://localhost:8084/readyz || true)" = "200" ]
+          }
+
+          await_health() {
+            for attempt in $(seq 1 15); do
+              if healthy; then
+                echo "$1 healthy after ${attempt} attempt(s)"
+                return 0
+              fi
+              sleep 2
+            done
+            return 1
+          }
+
+          # The desk's /readyz reports its upstreams, and the first probe after a restart has
+          # twice reported them unhealthy before settling within seconds. A gate that sampled
+          # once would false-fail on that warm-up, so readiness has to appear and then hold.
+          holds() {
+            echo "re-checking readiness in ${hold_seconds}s"
+            sleep "$hold_seconds"
+            if healthy; then
+              echo "readiness held"
+              return 0
             fi
-            sleep 2
-          done
-          echo "health check failed (last status: ${code:-none})"
+            echo "readiness did not hold"
+            return 1
+          }
+
+          switch_to "$target"
+          sudo systemctl restart "$app"
+
+          if await_health "release $release" && holds; then
+            # Three releases is enough to roll back through without filling the disk.
+            find "$releases" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' \
+              | sort -rn | tail -n +4 | cut -d' ' -f2- | xargs -r rm -rf
+            rm -rf "$HOME/$app-prev"
+            exit 0
+          fi
+
+          echo "release $release did not reach and hold readiness"
+          if [ -n "$previous" ] && [ -d "$previous" ]; then
+            echo "rolling back to $previous"
+            switch_to "$previous"
+            sudo systemctl restart "$app"
+            await_health "rollback" || echo "rollback did not come up either — the service is down"
+          else
+            echo "no previous release to roll back to"
+          fi
           exit 1
           REMOTE
