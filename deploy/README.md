@@ -1,14 +1,19 @@
 # Deploying the trading desk
 
 Box 1 (`145.241.193.169`), alongside orderbook (`:8080`), risk-engine (`:8081`), and
-visitor-analytics (`:8083`). The desk runs on `:8084` and reverse-proxies the three services
-under one origin at `desk.damianhoward.com`.
+visitor-analytics (`:8083`). The desk runs on `:8084` and reverse-proxies two upstreams under one
+origin at `desk.damianhoward.com`: orderbook on this box, and trading-system on box 2. risk-engine
+is not a tab — the Risk tab was removed on 2026-07-17 and it stays live standalone at
+`risk.damianhoward.com`.
 
 ## Automated deploy
 
 `.github/workflows/deploy.yml` runs on merge to `main` (or `workflow_dispatch`): it builds and
-tests the distribution, ships the tested artifact over SSH, keeps a `-prev` copy for rollback,
-syncs the systemd unit only when it changed, restarts, and gates success on a `/healthz` 200.
+tests the distribution, ships the tested artifact over SSH against a pinned host key, unpacks it
+into `~/releases/trading-desk/<commit>` and moves `~/trading-desk` onto it with a symlink rename,
+syncs the systemd unit only when it changed, restarts, and requires a `/readyz` 200 that still
+holds 20 seconds later — the first probe after a restart reports the upstreams unhealthy while
+they warm up. A release that fails that gate is rolled back to its predecessor.
 Secrets: `DEPLOY_SSH_KEY` (the box-1 `oracle_orderbook` key), `DEPLOY_HOST`, `DEPLOY_USER`.
 
 ## One-time host setup
