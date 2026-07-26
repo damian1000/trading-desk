@@ -14,6 +14,13 @@ into `~/releases/trading-desk/<commit>` and moves `~/trading-desk` onto it with 
 syncs the systemd unit only when it changed, restarts, and requires a `/readyz` 200 that still
 holds 20 seconds later — the first probe after a restart reports the upstreams unhealthy while
 they warm up. A release that fails that gate is rolled back to its predecessor.
+
+Because that gate reads the upstreams, the desk's deploy depends on the rest of the estate being
+quiet. Observed on 2026-07-26: five services were merged at once, orderbook restarted inside the
+desk's 20-second hold window, readiness did not hold, and the desk correctly rolled back to its
+previous release — `readiness did not hold` then `rollback healthy after 5 attempt(s)`. Nothing
+was wrong with the release. Re-run the deploy once the other services have settled; deploy the
+desk last when shipping several at once.
 Secrets: `DEPLOY_SSH_KEY` (the box-1 `oracle_orderbook` key), `DEPLOY_HOST`, `DEPLOY_USER`.
 
 ## One-time host setup
