@@ -27,9 +27,9 @@ Secrets: `DEPLOY_SSH_KEY` (the box-1 `oracle_orderbook` key), `DEPLOY_HOST`, `DE
 
 1. **DNS** — Cloudflare `desk.damianhoward.com` A record → `145.241.193.169`, **DNS only / grey**
    (proxied breaks Caddy's ACME challenge).
-2. **Caddy** — append the block in `deploy/Caddyfile` to `/etc/caddy/Caddyfile`, then
-   `sudo systemctl reload caddy`. 80/443 are already open; no new port is exposed — `8084` stays
-   localhost-only.
+2. **Caddy** — nothing to do by hand. The host's Caddy configuration is version-controlled and
+   deployed automatically: validated, backed up and reloaded as part of a deploy. The desk adds no
+   publicly reachable port; it binds loopback and is served through the proxy.
 3. **Upstreams** — the box-local defaults (`localhost:8080/8081/8082`) cover orderbook and risk.
    For trading (box 2), create `/etc/trading-desk/upstreams.env` with
    `TRADING_UPSTREAM=http://10.0.0.91:8082` (VCN private IP; needs an OCI ingress rule `8082 from
