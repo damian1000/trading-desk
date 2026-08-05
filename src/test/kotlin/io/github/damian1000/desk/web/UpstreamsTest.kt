@@ -24,11 +24,11 @@ class UpstreamsTest {
         val upstreams =
             Upstreams.fromEnv(
                 mapOf(
-                    "ORDERBOOK_UPSTREAM" to "http://10.0.0.150:8080",
+                    "ORDERBOOK_UPSTREAM" to "http://192.0.2.10:8080",
                     "TRADING_UPSTREAM" to "https://trading.damianhoward.com",
                 ),
             )
-        assertEquals(URI("http://10.0.0.150:8080"), upstreams.orderbook)
+        assertEquals(URI("http://192.0.2.10:8080"), upstreams.orderbook)
         assertEquals(URI("https://trading.damianhoward.com"), upstreams.trading)
     }
 

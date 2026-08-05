@@ -1,10 +1,9 @@
 # Deploying the trading desk
 
-Box 1 (`145.241.193.169`), alongside orderbook (`:8080`), risk-engine (`:8081`), and
-visitor-analytics (`:8083`). The desk runs on `:8084` and reverse-proxies two upstreams under one
-origin at `desk.damianhoward.com`: orderbook on this box, and trading-system on box 2. risk-engine
-is not a tab — the Risk tab was removed on 2026-07-17 and it stays live standalone at
-`risk.damianhoward.com`.
+The desk shares a box with the order book, the risk view and the analytics service, and
+reverse-proxies two upstreams under one origin at `desk.damianhoward.com`: the order book on the
+same box, and trading-system on the other. risk-engine is not a tab — the Risk tab was removed on
+2026-07-17 and it stays live standalone at `risk.damianhoward.com`.
 
 ## Automated deploy
 
@@ -25,16 +24,16 @@ Secrets: `DEPLOY_SSH_KEY` (the box-1 `oracle_orderbook` key), `DEPLOY_HOST`, `DE
 
 ## One-time host setup
 
-1. **DNS** — Cloudflare `desk.damianhoward.com` A record → `145.241.193.169`, **DNS only / grey**
+1. **DNS** — a Cloudflare `desk.damianhoward.com` A record to the box, **DNS only / grey**
    (proxied breaks Caddy's ACME challenge).
 2. **Caddy** — nothing to do by hand. The host's Caddy configuration is version-controlled and
    deployed automatically: validated, backed up and reloaded as part of a deploy. The desk adds no
    publicly reachable port; it binds loopback and is served through the proxy.
-3. **Upstreams** — the box-local defaults (`localhost:8080/8081/8082`) cover orderbook and risk.
-   For trading (box 2), create `/etc/trading-desk/upstreams.env` with
-   `TRADING_UPSTREAM=http://10.0.0.91:8082` (VCN private IP; needs an OCI ingress rule `8082 from
-   10.0.0.150/32` and a box-2 iptables ACCEPT) or `TRADING_UPSTREAM=https://trading.damianhoward.com`
-   (no firewall change).
+3. **Upstreams** — the loopback defaults cover the services sharing this box. trading-system is on
+   the other box, and the desk reaches it over its ordinary public TLS hostname rather than across
+   the private network. Both work; the public route was chosen because the private one costs a
+   standing ingress rule between the two boxes, and an always-open path is a poor trade for saving
+   one TLS handshake on a proxy hop. The override lives in an environment file on the box.
 4. **systemd** — the first deploy installs `deploy/trading-desk.service`; thereafter the pipeline
    keeps it in sync. `JAVA_OPTS=-Xmx96m` (the desk is a proxy plus static assets — check `free -m`
    before adding it, as box 1 already runs three JVMs).
