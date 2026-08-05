@@ -3,7 +3,7 @@
 // no domain logic — each service stays a standalone, independently deployed app; this module
 // only routes to them (streaming SSE through untouched) and serves the shell chrome.
 plugins {
-    id 'io.github.damian1000.kotlin-conventions' version '0.4.12'
+    id 'io.github.damian1000.kotlin-conventions' version '0.4.13'
     id 'application'
 }
 
@@ -22,20 +22,4 @@ dependencies {
 // Only the process entry point (DeskServerKt — main() binds the real port and blocks) is
 // excluded, like a Spring Boot Application / CLI MainKt. The rest — routing, the reverse
 // proxy, asset loading, upstream resolution — is exercised over a loopback HttpServer and counted.
-def coverageExclusions = ['**/web/DeskServerKt.class']
-
-jacocoTestReport {
-    afterEvaluate {
-        classDirectories.setFrom(files(classDirectories.files.collect {
-            fileTree(dir: it, excludes: coverageExclusions)
-        }))
-    }
-}
-
-jacocoTestCoverageVerification {
-    afterEvaluate {
-        classDirectories.setFrom(files(classDirectories.files.collect {
-            fileTree(dir: it, excludes: coverageExclusions)
-        }))
-    }
-}
+coverageExcludes = ['**/web/DeskServerKt.class']
