@@ -12,8 +12,40 @@ EnvironmentFile=-/etc/trading-desk/upstreams.env
 ExecStart=/home/ubuntu/trading-desk/bin/trading-desk
 Restart=on-failure
 RestartSec=2
-NoNewPrivileges=true
 User=ubuntu
+
+# Sandboxing. This service is reachable from the internet and proxies to the other services on the
+# box, which makes it the one most worth confining: it writes nothing to disk and holds no
+# credential, so the whole filesystem is read-only and it needs no ReadWritePaths at all.
+# `systemd-analyze security trading-desk.service` reports the result.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+# MemoryDenyWriteExecute is deliberately absent rather than set false, so it does not get added
+# later: the JVM writes JIT-compiled code and then executes it, and enabling it kills the process
+# at the first compilation.
+#
+# Sized from the observed peak (74 MB) and the 96 MB heap, not from either alone. The point is to
+# bound a runaway into a restart rather than let one tenant of a 1 GB box take the others with it.
+MemoryMax=256M
+TasksMax=256
 
 [Install]
 WantedBy=multi-user.target
