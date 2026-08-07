@@ -26,8 +26,11 @@ Secrets: `DEPLOY_SSH_KEY` (the box-1 `oracle_orderbook` key), `DEPLOY_HOST`, `DE
 
 1. **DNS** — a Cloudflare `desk.damianhoward.com` A record to the box, **DNS only / grey**
    (proxied breaks Caddy's ACME challenge).
-2. **Caddy** — nothing to do by hand. The host's Caddy configuration is version-controlled and
-   deployed automatically: validated, backed up and reloaded as part of a deploy. The desk adds no
+2. **Caddy** — one operator step, not automatic. The host's Caddy configuration is
+   version-controlled in the private infrastructure repository as one whole file per box, and
+   applied by a script there that validates and backs up before reloading. A deploy of this
+   service does not touch it, deliberately: a bad Caddyfile takes every site on the box down at
+   once, which should not be reachable as a side effect of shipping one service. The desk adds no
    publicly reachable port; it binds loopback and is served through the proxy.
 3. **Upstreams** — the loopback defaults cover the services sharing this box. trading-system is on
    the other box, and the desk reaches it over its ordinary public TLS hostname rather than across

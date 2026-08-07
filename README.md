@@ -47,7 +47,7 @@ cross-box) URLs in production.
 
 ```bash
 ./gradlew --no-daemon spotlessCheck   # ktlint + Prettier (web assets, YAML, Markdown)
-./gradlew --no-daemon clean check     # tests + 90% instruction coverage gate
+./gradlew --no-daemon clean build     # tests, 90% coverage gate, and packaging — what CI runs
 ./gradlew installDist && PORT=8084 build/install/trading-desk/bin/trading-desk
 ```
 
