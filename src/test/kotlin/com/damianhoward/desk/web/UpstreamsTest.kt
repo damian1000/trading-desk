@@ -1,4 +1,4 @@
-package io.github.damian1000.desk.web
+package com.damianhoward.desk.web
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull

@@ -1,8 +1,8 @@
 # trading-desk
 
-[![CI](https://github.com/damian1000/trading-desk/actions/workflows/ci.yml/badge.svg)](https://github.com/damian1000/trading-desk/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/damian1000/trading-desk/actions/workflows/codeql.yml/badge.svg)](https://github.com/damian1000/trading-desk/actions/workflows/codeql.yml)
-[![codecov](https://codecov.io/gh/damian1000/trading-desk/graph/badge.svg)](https://codecov.io/gh/damian1000/trading-desk)
+[![CI](https://github.com/damianhoward/trading-desk/actions/workflows/ci.yml/badge.svg)](https://github.com/damianhoward/trading-desk/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/damianhoward/trading-desk/actions/workflows/codeql.yml/badge.svg)](https://github.com/damianhoward/trading-desk/actions/workflows/codeql.yml)
+[![codecov](https://codecov.io/gh/damianhoward/trading-desk/graph/badge.svg)](https://codecov.io/gh/damianhoward/trading-desk)
 
 One trading workspace over two services. The desk presents the live order book and the trading
 dashboard — positions, risk, and PnL off the fill stream — as tabs in a single browser page:
@@ -12,11 +12,11 @@ Live at **[desk.damianhoward.com](https://desk.damianhoward.com)**.
 
 ## What it is
 
-A composing gateway. The desk owns no domain logic: [`orderbook`](https://github.com/damian1000/orderbook)
-and [`trading-system`](https://github.com/damian1000/trading-system) stay standalone, independently
+A composing gateway. The desk owns no domain logic: [`orderbook`](https://github.com/damianhoward/orderbook)
+and [`trading-system`](https://github.com/damianhoward/trading-system) stay standalone, independently
 deployed services. This module serves the shell UI and reverse-proxies each service under a tab
 prefix, so the browser talks to one origin while each backend runs untouched. The trading tab's
-risk numbers come from the [`risk-engine`](https://github.com/damian1000/risk-engine) library,
+risk numbers come from the [`risk-engine`](https://github.com/damianhoward/risk-engine) library,
 which also runs standalone at [risk.damianhoward.com](https://risk.damianhoward.com).
 
 ```
