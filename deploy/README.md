@@ -8,10 +8,10 @@ same box, and trading-system on the other. risk-engine is not a tab — the Risk
 ## Automated deploy
 
 `.github/workflows/deploy.yml` runs on merge to `main` (or `workflow_dispatch`): it builds and
-tests the distribution, ships the tested artifact over SSH against a pinned host key, unpacks it
-into `~/releases/trading-desk/<commit>` and moves `~/trading-desk` onto it with a symlink rename,
-syncs the systemd unit only when it changed, restarts, and requires a `/readyz` 200 that still
-holds 20 seconds later — the first probe after a restart reports the upstreams unhealthy while
+tests the distribution, then asks the box for a release over SSH against a pinned host key, with
+the bundle on stdin. The release unpacks into `/srv/trading-desk/releases/<commit>` and
+`/srv/trading-desk/current` moves onto it with a symlink rename; the box restarts the service and
+requires a `/readyz` 200 that still holds 20 seconds later — the first probe after a restart reports the upstreams unhealthy while
 they warm up. A release that fails that gate is rolled back to its predecessor.
 
 Because that gate reads the upstreams, the desk's deploy depends on the rest of the estate being
@@ -37,9 +37,10 @@ Secrets: `DEPLOY_SSH_KEY` (the box-1 `oracle_orderbook` key), `DEPLOY_HOST`, `DE
    the private network. Both work; the public route was chosen because the private one costs a
    standing ingress rule between the two boxes, and an always-open path is a poor trade for saving
    one TLS handshake on a proxy hop. The override lives in an environment file on the box.
-4. **systemd** — the first deploy installs `deploy/trading-desk.service`; thereafter the pipeline
-   keeps it in sync. `JAVA_OPTS=-Xmx96m` (the desk is a proxy plus static assets — check `free -m`
-   before adding it, as box 1 already runs three JVMs).
+4. **systemd** — the unit is host configuration, owned outside this repository and applied by an
+   operator, because a unit file is a request to run anything as anyone and a deploy account able
+   to install one holds root by another name. `JAVA_OPTS=-Xmx96m` (the desk is a proxy plus static
+   assets — check `free -m` before adding it, as box 1 already runs three JVMs).
 
 ## Memory note
 
