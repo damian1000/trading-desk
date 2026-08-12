@@ -1,4 +1,4 @@
-package io.github.damian1000.desk.web
+package com.damianhoward.desk.web
 
 import java.net.URI
 

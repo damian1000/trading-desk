@@ -1,4 +1,4 @@
-package io.github.damian1000.desk.web
+package com.damianhoward.desk.web
 
 import com.sun.net.httpserver.HttpExchange
 import org.junit.jupiter.api.AfterEach
