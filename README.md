@@ -26,9 +26,16 @@ Browser ──▶ desk.damianhoward.com
              └─ /trading/**    ─▶  trading-system        (positions off the fill stream, SSE)
 ```
 
-Each tab is the real service's front end, embedded with its own topbar and status bar hidden
+Each tab is the real service's front end in an iframe, with its own topbar and status bar hidden
 (`?embed=1`) so the desk supplies the single surrounding chrome. Both tabs stay mounted, so a
 tab's live stream keeps running while the other is in view.
+
+The proxy and the frame answer different questions, and the pair is deliberate. The proxy makes it
+one origin, which is what lets `frame-ancestors` stay `'self'` rather than being opened up to a
+second hostname. The frame is what keeps each tab the service's own front end: orderbook and
+trading-system stay independently deployed, each tab keeps its own SSE stream running while another
+is in view, a keystroke stays with the app being typed into rather than reaching the shell, and a
+child that fails renders a broken tab instead of a broken desk.
 
 ## Routing and streaming
 
