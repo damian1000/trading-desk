@@ -1,7 +1,7 @@
 /*
  * Trading desk shell controller. The desk owns the chrome and switches tabs; each tab is a
  * service's own front end in an iframe (served through the gateway with ?embed=1), so all the
- * live rendering stays in the embedded apps. All three frames stay mounted and only visibility
+ * live rendering stays in the embedded apps. Both frames stay mounted and only visibility
  * toggles, so a tab's SSE stream keeps running while you're looking at another.
  */
 (function () {
