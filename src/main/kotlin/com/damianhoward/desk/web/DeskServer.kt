@@ -19,7 +19,9 @@ import java.util.concurrent.TimeUnit
  * everything under a service tab prefix (`/orderbook`, `/trading`) to the [Gateway], which
  * proxies it to the matching upstream. Plumbing only — routing here, proxying in the gateway,
  * rendering in the browser. `/healthz` proves the desk process answers; `/readyz` (see [Readiness])
- * proves its upstreams are reachable, so a deploy whose tabs would 502 reads as not-ready. JDK
+ * proves its upstreams are reachable, so a deploy whose tabs would 502 reads as not-ready.
+ * `/metrics` publishes process-level facts only and never that upstream probe: see [ProcessMetrics]
+ * for why a check worth running per probe is the wrong thing to run per scrape. JDK
  * [HttpServer] on a request pool capped at [maxPoolThreads]; each proxied SSE stream pins one pool
  * thread for its connection's lifetime, and requests beyond the cap are refused at the connection
  * rather than queued.
@@ -38,6 +40,7 @@ class DeskServer(
      * positional call sites are unaffected.
      */
     private val bindAddress: InetAddress = InetAddress.getLoopbackAddress(),
+    private val processMetrics: ProcessMetrics = ProcessMetrics(),
 ) {
     private lateinit var server: HttpServer
     private lateinit var executor: ExecutorService
@@ -74,6 +77,7 @@ class DeskServer(
             when {
                 path == "/healthz" -> get(exchange) { respond(exchange, 200, "text/plain", "ok") }
                 path == "/readyz" -> get(exchange) { ready(exchange) }
+                path == "/metrics" -> get(exchange) { respond(exchange, 200, ProcessMetrics.CONTENT_TYPE, processMetrics.render()) }
                 path == "/" -> get(exchange) { respond(exchange, 200, "text/html; charset=utf-8", assets.indexHtml) }
                 path == "/privacy" -> get(exchange) { respond(exchange, 200, "text/html; charset=utf-8", assets.privacyHtml) }
                 path == "/app.css" -> get(exchange) { respond(exchange, 200, "text/css; charset=utf-8", assets.appCss) }
