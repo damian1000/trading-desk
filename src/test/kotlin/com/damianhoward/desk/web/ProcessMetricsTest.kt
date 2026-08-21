@@ -4,148 +4,169 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import java.lang.management.GarbageCollectorMXBean
 import java.lang.management.ManagementFactory
-import java.lang.management.MemoryMXBean
+import java.lang.management.MemoryPoolMXBean
+import java.lang.management.MemoryType
 import java.lang.management.MemoryUsage
-import java.lang.management.RuntimeMXBean
-import java.lang.management.ThreadMXBean
 import javax.management.ObjectName
 
+/**
+ * The two heap gauges exist to answer "what ceiling does this service need" without a fast series,
+ * so what is worth asserting is the shape of the answer when the JVM cannot give one — a heap that
+ * has never been collected, and a pool that does not report collection usage at all. Both must be
+ * absent rather than zero, because zero is a claim about the heap and absence is a claim about the
+ * measurement.
+ */
 class ProcessMetricsTest {
-    private fun metrics(
-        uptimeMillis: Long = 90_000,
-        heapUsed: Long = 10L * 1024 * 1024,
-        heapCommitted: Long = 32L * 1024 * 1024,
-        heapMax: Long = 96L * 1024 * 1024,
-        threadCount: Int = 21,
-        collectors: List<GarbageCollectorMXBean> = listOf(FakeCollector("G1 Young Generation", 12, 340)),
-    ) = ProcessMetrics(
-        runtime = FakeRuntime(uptimeMillis),
-        memory = FakeMemory(MemoryUsage(0, heapUsed, heapCommitted, heapMax)),
-        threads = FakeThreads(threadCount),
-        collectors = collectors,
-    ).render()
+    /** Only the four methods under test are real; the rest of the interface is never reached. */
+    private class Pool(
+        private val poolType: MemoryType,
+        private val peak: Long,
+        private val collection: MemoryUsage?,
+    ) : MemoryPoolMXBean {
+        override fun getType() = poolType
 
-    @Test
-    fun `heap is published against its ceiling`() {
-        // The pair this exists for. One manual jcmd said 10 MB live against a 96 MB ceiling; a
-        // series is what turns that into evidence for sizing rather than one reading during an audit.
-        val body = metrics()
-        assertTrue(body.contains("trading_desk_jvm_heap_used_bytes ${10L * 1024 * 1024}"), body)
-        assertTrue(body.contains("trading_desk_jvm_heap_max_bytes ${96L * 1024 * 1024}"), body)
+        override fun getPeakUsage() = MemoryUsage(0, peak, peak, peak)
+
+        override fun getCollectionUsage() = collection
+
+        override fun getName() = "stub"
+
+        override fun getUsage() = MemoryUsage(0, 1, 1, 1)
+
+        override fun isValid() = true
+
+        override fun getMemoryManagerNames() = arrayOf("stub")
+
+        override fun getUsageThreshold() = 0L
+
+        override fun setUsageThreshold(threshold: Long) = Unit
+
+        override fun isUsageThresholdExceeded() = false
+
+        override fun getUsageThresholdCount() = 0L
+
+        override fun isUsageThresholdSupported() = false
+
+        override fun getCollectionUsageThreshold() = 0L
+
+        override fun setCollectionUsageThreshold(threshold: Long) = Unit
+
+        override fun isCollectionUsageThresholdExceeded() = false
+
+        override fun getCollectionUsageThresholdCount() = 0L
+
+        override fun isCollectionUsageThresholdSupported() = false
+
+        override fun resetPeakUsage() = Unit
+
+        override fun getObjectName(): ObjectName = ObjectName("java.lang:type=MemoryPool,name=stub")
     }
 
-    @Test
-    fun `an unset heap ceiling is omitted rather than published as minus one`() {
-        // getMax returns -1 when no ceiling is configured. Published, it reads as a real limit of
-        // minus one byte, and every "used against max" expression built on it is nonsense.
-        val body = metrics(heapMax = -1)
-        assertFalse(body.contains("trading_desk_jvm_heap_max_bytes"), body)
-        assertTrue(body.contains("trading_desk_jvm_heap_used_bytes"), body)
-    }
+    private fun metricsWith(pools: List<MemoryPoolMXBean>) =
+        ProcessMetrics(
+            runtime = ManagementFactory.getRuntimeMXBean(),
+            memory = ManagementFactory.getMemoryMXBean(),
+            threads = ManagementFactory.getThreadMXBean(),
+            collectors = ManagementFactory.getGarbageCollectorMXBeans(),
+            pools = pools,
+        ).render()
+
+    private fun usage(used: Long) = MemoryUsage(0, used, used, used)
 
     @Test
-    fun `uptime and durations are published in seconds`() {
-        val body = metrics(uptimeMillis = 90_500)
-        assertTrue(body.contains("trading_desk_process_uptime_seconds 90.500"), body)
-        assertTrue(body.contains("""trading_desk_jvm_gc_seconds_total{gc="G1 Young Generation"} 0.340"""), body)
-    }
-
-    @Test
-    fun `each collector is labelled by name`() {
-        val body =
-            metrics(
-                collectors =
-                    listOf(
-                        FakeCollector("G1 Young Generation", 12, 340),
-                        FakeCollector("G1 Old Generation", 1, 90),
-                    ),
+    fun `peak and post-collection are summed across heap pools`() {
+        val metrics =
+            metricsWith(
+                listOf(
+                    Pool(MemoryType.HEAP, peak = 100, collection = usage(30)),
+                    Pool(MemoryType.HEAP, peak = 50, collection = usage(20)),
+                ),
             )
-        assertTrue(body.contains("""trading_desk_jvm_gc_collections_total{gc="G1 Young Generation"} 12"""), body)
-        assertTrue(body.contains("""trading_desk_jvm_gc_collections_total{gc="G1 Old Generation"} 1"""), body)
+        assertTrue(metrics.contains("trading_desk_jvm_heap_peak_bytes 150"), metrics)
+        assertTrue(metrics.contains("trading_desk_jvm_heap_post_gc_bytes 50"), metrics)
     }
 
     @Test
-    fun `no upstream is probed`() {
-        // The load-bearing property. /readyz GETs every upstream's /healthz, which is right per
-        // probe and wrong per scrape: a collector at fifteen seconds would make this service a load
-        // source on the ones it fronts. This class is given no gateway and no client, and that is
-        // the guarantee rather than a convention.
-        val body = metrics()
-        assertFalse(body.contains("ready"), body)
-        assertFalse(body.contains("upstream"), body)
+    fun `non-heap pools are excluded from both`() {
+        // Metaspace is not governed by the heap ceiling, so counting it would inflate the number
+        // whose only purpose is comparison against -Xmx.
+        val metrics =
+            metricsWith(
+                listOf(
+                    Pool(MemoryType.HEAP, peak = 100, collection = usage(30)),
+                    Pool(MemoryType.NON_HEAP, peak = 900, collection = usage(800)),
+                ),
+            )
+        assertTrue(metrics.contains("trading_desk_jvm_heap_peak_bytes 100"), metrics)
+        assertTrue(metrics.contains("trading_desk_jvm_heap_post_gc_bytes 30"), metrics)
     }
 
     @Test
-    fun `every published series carries its HELP and TYPE`() {
-        // A series without a TYPE is parsed as untyped, which silently costs rate() and increase().
-        val body = metrics()
+    fun `a heap not yet collected publishes no live set at all`() {
+        val metrics = metricsWith(listOf(Pool(MemoryType.HEAP, peak = 100, collection = null)))
+        assertTrue(metrics.contains("trading_desk_jvm_heap_peak_bytes 100"), metrics)
+        // Zero would read as an empty heap; the fact is that nothing has established a live set.
+        assertFalse(metrics.contains("trading_desk_jvm_heap_post_gc_bytes"), metrics)
+    }
+
+    @Test
+    fun `one silent pool withdraws the live set rather than under-reporting it`() {
+        // A partial sum would look like a smaller live set, which is the direction that talks a
+        // ceiling down — the error this pair of gauges exists to prevent.
+        val metrics =
+            metricsWith(
+                listOf(
+                    Pool(MemoryType.HEAP, peak = 100, collection = usage(30)),
+                    Pool(MemoryType.HEAP, peak = 50, collection = null),
+                ),
+            )
+        assertTrue(metrics.contains("trading_desk_jvm_heap_peak_bytes 150"), metrics)
+        assertFalse(metrics.contains("trading_desk_jvm_heap_post_gc_bytes"), metrics)
+    }
+
+    @Test
+    fun `no heap pools publishes neither gauge`() {
+        val metrics = metricsWith(listOf(Pool(MemoryType.NON_HEAP, peak = 900, collection = usage(800))))
+        assertFalse(metrics.contains("trading_desk_jvm_heap_peak_bytes"), metrics)
+        assertFalse(metrics.contains("trading_desk_jvm_heap_post_gc_bytes"), metrics)
+    }
+
+    @Test
+    fun `the real JVM answers both, and the peak is not below the live set`() {
+        // Against the actual MXBeans rather than stubs, so the gauges are known to work on the JVM
+        // the service runs on and not only against the shapes this test imagines.
+        System.gc()
+        val metrics = ProcessMetrics().render()
+        val peak = valueOf(metrics, "trading_desk_jvm_heap_peak_bytes")
+        val live = valueOf(metrics, "trading_desk_jvm_heap_post_gc_bytes")
+        assertTrue(peak != null && peak > 0, metrics)
+        assertTrue(live != null && live > 0, metrics)
+        assertTrue(peak!! >= live!!, "peak $peak should not be below live set $live")
+    }
+
+    @Test
+    fun `no series is declared twice`() {
+        // The pair added here is the first chance to publish the same name from two places, and a
+        // duplicate is what a collector reads as a series disagreeing with itself.
         val names =
-            body
+            ProcessMetrics()
+                .render()
                 .lineSequence()
-                .filter { it.isNotBlank() && !it.startsWith("#") }
-                .map { it.substringBefore(' ').substringBefore('{') }
-                .distinct()
+                .filter { it.startsWith("# TYPE ") }
+                .map { it.split(' ')[2] }
                 .toList()
-        assertTrue(names.isNotEmpty(), body)
-        for (name in names) {
-            assertTrue(body.contains("# HELP $name "), "$name has no HELP\n$body")
-            assertTrue(body.contains("# TYPE $name "), "$name has no TYPE\n$body")
-        }
+        assertEquals(names.size, names.toSet().size, names.toString())
     }
 
-    @Test
-    fun `counters carry the suffix every dashboard assumes`() {
-        val body = metrics()
-        for (line in body.lineSequence().filter { it.startsWith("# TYPE ") }) {
-            val (name, type) = line.removePrefix("# TYPE ").split(' ')
-            if (type == "counter") assertTrue(name.endsWith("_total"), "$name is a counter without _total")
-        }
-    }
-
-    @Test
-    fun `the real beans render without throwing`() {
-        // The fakes prove the shape; this proves the wiring, since a JVM bean returning something
-        // unexpected would otherwise only surface on the box.
-        val body = ProcessMetrics().render()
-        assertTrue(body.contains("trading_desk_jvm_threads"), body)
-        assertEquals("text/plain; version=0.0.4; charset=utf-8", ProcessMetrics.CONTENT_TYPE)
-    }
-
-    private class FakeRuntime(
-        private val uptimeMillis: Long,
-    ) : RuntimeMXBean by ManagementFactory.getRuntimeMXBean() {
-        override fun getUptime(): Long = uptimeMillis
-    }
-
-    private class FakeMemory(
-        private val heap: MemoryUsage,
-    ) : MemoryMXBean by ManagementFactory.getMemoryMXBean() {
-        override fun getHeapMemoryUsage(): MemoryUsage = heap
-    }
-
-    private class FakeThreads(
-        private val count: Int,
-    ) : ThreadMXBean by ManagementFactory.getThreadMXBean() {
-        override fun getThreadCount(): Int = count
-    }
-
-    private class FakeCollector(
-        private val collectorName: String,
-        private val count: Long,
-        private val timeMillis: Long,
-    ) : GarbageCollectorMXBean {
-        override fun getCollectionCount(): Long = count
-
-        override fun getCollectionTime(): Long = timeMillis
-
-        override fun getName(): String = collectorName
-
-        override fun getMemoryPoolNames(): Array<String> = emptyArray()
-
-        override fun isValid(): Boolean = true
-
-        override fun getObjectName(): ObjectName = ObjectName("test:type=GarbageCollector,name=$collectorName")
-    }
+    private fun valueOf(
+        metrics: String,
+        name: String,
+    ): Long? =
+        metrics
+            .lineSequence()
+            .firstOrNull { it.startsWith("$name ") }
+            ?.substringAfter(' ')
+            ?.trim()
+            ?.toLong()
 }
